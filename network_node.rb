@@ -10,7 +10,6 @@ class NetworkNode
   WF_CTS = 3
   WF_DATA = 4
   WF_ACK = 5
-  IN_BO_COUNTING = 6
 
   # coordinate of node
   @coordinate
@@ -18,11 +17,14 @@ class NetworkNode
   @ch_status
   # node status (WF_DIFS ... etc)
   @status
+  # in BOC true/false
+  @inBOCounting
 
   # コンストラクタ
   def initialize()
     # set ch_status => idle
     @ch_status = 1
+    @inBOCounting = false
     # ToDo: init status
   end
 
@@ -36,13 +38,12 @@ class NetworkNode
 
   # chの状態チェック
   def isIdle()
-    retv
     if @ch_status == IDLE
       retv = true
     else
       retv = false
     end
-    rretv
+    retv
   end
 
   # ルーチン
