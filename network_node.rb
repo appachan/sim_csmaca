@@ -36,11 +36,13 @@ class NetworkNode
 
   # chの状態チェック
   def isIdle()
+    retv
     if @ch_status == IDLE
-      true
+      retv = true
     else
-      false
+      retv = false
     end
+    rretv
   end
 
   # ルーチン
