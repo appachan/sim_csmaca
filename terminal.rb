@@ -1,25 +1,46 @@
 class Terminal < NetworkNode
-  # const
+  # const for ch_status
+  BUSY = 0
+  IDLE = 1
+
+  # status_id
+  WF_NAV = 0
+  WF_DIFS = 1
+  WF_SIFS = 2
+  WF_CTS = 3
+  WF_DATA = 4
+  WF_ACK = 5
+  WF_BOC = 6
+  WF_SLOT = 7
+
+  # waiting time
+  T_SIFS = 16
+  T_SLOT = 9
+  T_DIFS = T_SIFS + T_SLOT * 2
+
+  # const for CW
   CWmin = 15
   CWmax = 127
 
   # values in superclass
   @coordinate
   @ch_status
-  @status
+  @status = [] # statusはstackで管理
   @frame
-  @inRBCounting
+  # @inBOCounting
+  @statusCounter # 状態終了までのn /microsec
 
   # values in this class
   @threshold
   @BOCounter
   @CW
-  @statusCounter # 状態終了までのn /microsec
 
   alias :super_isIdle :isIdle
 
   def initialize(coordinate, threshold) # coordinate => 座標, threshold => 閾値
     super()
+    # とりあえずDIFS待ちということで
+    self.to_new_status(WF_DIFS)
     @coordinate = coordinate
     @threshold = threshold
     @CW = CWmin
@@ -37,6 +58,17 @@ class Terminal < NetworkNode
     super()
   end
 
+  def to_new_status(status_id)
+    # status遷移時の処理
+    super(status_id)
+    puts @statusCounter
+  end
+
+  def to_prev_status()
+    # status遷移時の処理
+    @status.pop()
+  end
+
   # CWの一様分布から設定
   def set_boc()
     r = Random.new()
@@ -50,25 +82,30 @@ class Terminal < NetworkNode
   end
 
   # BOカウント 一応例外処理
+  # ToDo: 運用でt_slot毎に呼ぶ必要がある
   def countdown_boc()
-    if isIdle() == true
-      @BOCounter -= 1
-    else
-      false
-    end
+
   end
 
   def routine()
-    if @inRBCounting == true
-      if @BOCounter > 0
+    if @status[0] == WF_BOC
+      if isIdle() == true && @statusCounter > 0
+        @BOCounter
+        @statusCounter -= 1
+        to_new_status(WF_SLOT)
+      else
         countdown_boc()
-        puts @BOCounter
+      end
+    else @status[0] == WF_SLOT
+      if @statusCounter > 0
+        @statusCounter -= 1
+      else
+        to_prev_status() # 常にWF_BOCが返ることが期待される
       end
     end
   end
 
   def test_method()
     @ch_status = 1
-    @inRBCounting = true
   end
 end

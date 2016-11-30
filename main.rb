@@ -6,4 +6,5 @@ terminal.test_method()
 @ch_status = 1
 for i in 1...10
   terminal.routine
+  puts "1 microsec passed."
 end
