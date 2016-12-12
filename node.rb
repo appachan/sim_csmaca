@@ -46,7 +46,7 @@ class Node
   @node_id
 
 
-  @flag = false
+  @need_for_refresh = false
 
   def initialize(coordinate, threshold, node_id) # coordinate => 座標, threshold => 閾値
     super()
@@ -60,49 +60,60 @@ class Node
     @frame_example_ACK = Frame.new(ACK, @node_id, NODE_ID["AP"])
     @CW = CWmin
     @BOCounter = 0
-=begin
-    refresh_frame_list(@received_frames)
-    refresh_frame_list(@new_received_frames)
-=end
     @received_frames = []
     @new_received_frames = []
   end
 
   def routine(receivers_list, transmitting_speed) # 他端末リスト, レートテーブルにおける任意の送信速度（MAC層による処理と仮定）
-    current_status = @status.pop()
+    @current_status = @status.pop()
+    initial_status = @current_status
 =begin
     i_am()
     print @received_frames
     print @new_received_frames
     puts
 =end
-    if current_status == IDLE
+    if @current_status == IDLE
       if has_frame_to_others() # 他端末宛フレームを受信
         @status.push(WF_NAV)
-        @flag = true
-      elsif is_idle() # CH idle フレームなし
+        @status_counter = -1 + T_SIFS + @frame_example_ACK.get_time(transmitting_speed) + @frame_for_DATA.get_time(transmitting_speed)
+      elsif is_idle(receivers_list) # CH idle フレームなし
         @status.push(WF_DIFS)
         @status_counter = T_DIFS
-      elsif (has_frame_to_me() && rssi(has_frame_to_me.sender, receivers_list)) # 自分宛のDATAフレームを受信
-        frame_to_me = has_frame_to_me()
-        makeACK(frame_to_me.sender)
-        @status.push(WF_DATA)
-        @status_counter = T_SIFS + frame_to_me.get_time(transmitting_speed)
-        @flag = true
+      elsif has_frame_to_me() # 自分宛のDATAフレームを受信
+        # ここで分岐入れる必要ありそう
+        # DATAが1件か複数件か
+        received_DATAs = @received_frames.select {|frame| frame.type == DATA}
+        if received_DATAs.length > 1
+          i_am()
+          puts "collision!"
+          @need_for_refresh = true
+          @status.push(IDLE)
+        else
+          frame_to_me = received_DATAs.pop()
+          makeACK(frame_to_me.sender)
+          @status.push(WF_DATA)
+          @status_counter = T_SIFS + frame_to_me.get_time(transmitting_speed)
+          @need_for_refresh = true
+        end
       else
+        @need_for_refresh = true
         @status.push(IDLE)
       end
 
-      current_status = @status.pop()
+      if @status[0] != IDLE
+        @current_status = @status.pop()
+      end
     end
 
-    if current_status == WF_BOC
+
+    if @current_status == WF_BOC
       @status_counter -= 1
-      @BOCounter -= 1
       if is_busy(receivers_list)
         @status.push(IDLE)
         @status_counter = T_SLOT
       elsif @status_counter <= 0
+        @BOCounter -= 1
         if @BOCounter <= 0
           transmit(receivers_list, @frame_for_DATA)
           @status.push(IN_TRANSMITTING_DATA)
@@ -116,25 +127,27 @@ class Node
         else # idle && BOC > 0
           @status.push(WF_BOC)
           @status_counter = T_SLOT
+          @need_for_refresh = true
         end
       else
         @status.push(WF_BOC)
       end
 
-    elsif current_status == WF_NAV
-      if hasACK()
+    elsif @current_status == WF_NAV
+      @status_counter -= 1
+      if @status_counter <= 0
         @status.push(WF_DIFS)
         @status_counter = T_DIFS
+        @need_for_refresh = true
       else
         @status.push(WF_NAV)
       end
 
-    elsif current_status == WF_DIFS
+    elsif @current_status == WF_DIFS
       @status_counter -= 1
       if @status_counter <= 0
         if is_busy(receivers_list)
           @status.push(IDLE)
-          @flag = true
         elsif @BOCounter <= 0 && !isAP()
           transmit(receivers_list, @frame_for_DATA)
           @status.push(IN_TRANSMITTING_DATA)
@@ -143,26 +156,62 @@ class Node
         elsif !isAP()
           @status.push(WF_BOC)
           @status_counter = T_SLOT
-          @flag = true
+          @need_for_refresh = true
         elsif isAP()
           # しんどい
-          @status.push(IDLE)
-          @flag = true
+          if has_frame_to_me() # 自分宛のDATAフレームを受信
+            # ここで分岐入れる必要ありそう
+            # DATAが1件か複数件か
+            received_DATAs = @received_frames.select {|frame| frame.type == DATA}
+            if received_DATAs.length > 1
+              i_am()
+              puts "collision!"
+              @need_for_refresh = true
+              @status.push(IDLE)
+
+            else
+              frame_to_me = received_DATAs.pop()
+              makeACK(frame_to_me.sender)
+              @status.push(WF_DATA)
+              @status_counter = T_SIFS + frame_to_me.get_time(transmitting_speed)
+              @need_for_refresh = true
+            end
+          else
+            @status.push(IDLE)
+          end
         else
           # ToDo
           i_am
           puts "想定してないよ"
         end
+      elsif has_frame_to_me() # 自分宛のDATAフレームを受信
+        # ここで分岐入れる必要ありそう
+        # DATAが1件か複数件か
+        received_DATAs = @received_frames.select {|frame| frame.type == DATA && rssi(frame.sender, receivers_list)}
+        if received_DATAs.length > 1
+          i_am()
+          puts "collision!"
+          @need_for_refresh = true
+          @status.push(IDLE)
+
+        else
+          frame_to_me = received_DATAs.pop()
+          makeACK(frame_to_me.sender)
+          @status.push(WF_DATA)
+          @status_counter = T_SIFS + frame_to_me.get_time(transmitting_speed) - 1
+          @need_for_refresh = true
+        end
       else
         @status.push(WF_DIFS)
+        @need_for_refresh = true
       end
 
-    elsif current_status == WF_ACK
+    elsif @current_status == WF_ACK
       @status_counter -= 1
       if @status_counter <= 0
         if hasACK_to_me()
           reset_cw()
-          set_boc()
+          @BOCounter = 0
           @status.push(IDLE)
 
           i_am()
@@ -175,25 +224,25 @@ class Node
           @status_counter = T_DIFS
 
           i_am()
-          puts "Transmission failed..."
+          puts "Transmission failed...."
 
         end
-        @flag = true
+        @need_for_refresh = true
       else
         @status.push(WF_ACK)
       end
 
-    elsif current_status == IN_TRANSMITTING_DATA
+    elsif @current_status == IN_TRANSMITTING_DATA
       @status_counter -= 1
       if @status_counter <= 0
         @status.push(WF_ACK)
         @status_counter = @frame_example_ACK.get_time(transmitting_speed)
-        @flag = true
+        @need_for_refresh = true
       else
         @status.push(IN_TRANSMITTING_DATA)
       end
 
-    elsif current_status == IN_TRANSMITTING_ACK
+    elsif @current_status == IN_TRANSMITTING_ACK
       @status_counter -= 1
       if @status_counter <= 0
         @status.push(IDLE)
@@ -201,7 +250,7 @@ class Node
         @status.push(IN_TRANSMITTING_ACK)
       end
 
-    elsif current_status == WF_DATA
+    elsif @current_status == WF_DATA
       @status_counter -= 1
       if @status_counter <= 0
         # 適切に宛先を指定してやる必要性 => ここにくるまえにmakeACK
@@ -216,11 +265,10 @@ class Node
       end
 
     end
-=begin
     i_am()
-    print " " + status_name(current_status) + " => " + status_name(@status[0])
+    # print " " + status_name(initial_status) + " => " + status_name(@current_status) + " => " + status_name(@status[0])
+    print status_name(@status[0])
     puts
-=end
   end
 
   def transmit(receivers_list, frame_to_transmit)
@@ -341,12 +389,25 @@ class Node
   end
 
   # idle
-  def is_idle()
-    @received_frames.empty?
+  def is_idle(receivers_list)
+    is_idle = true
+    if @received_frames.empty?
+      is_idle = true
+    else
+      @received_frames.each do |frame|
+        if rssi(frame.sender, receivers_list)
+          is_idle = false
+          break
+        end
+      end
+    end
+
+    return is_idle
   end
 
   # busy
   def is_busy(receivers_list)
+    is_busy = false
     if @received_frames.empty?
       is_busy = false
     else
@@ -366,7 +427,7 @@ class Node
     frame_to_me = false
     @received_frames.each do |frame|
       if frame.type == DATA && frame.destination == @node_id
-        frame_to_me = frame
+        frame_to_me = true
         break
       end
     end
@@ -388,20 +449,24 @@ class Node
 
   # 外から呼び出して使用
   def refresh_frames_list()
-    if @flag == true
+    if @need_for_refresh == true
       @received_frames = @new_received_frames
       @new_received_frames = []
-      @flag = false
+      @need_for_refresh = false
     end
   end
 
   def i_am()
     names = NODE_ID.invert
-    print names[@node_id] + "\t==> "
+    print names[@node_id] + " ==> "
   end
 
   def status_name(status_id)
-    status = ["IDLE", "WF_NAV", "WF_DIFS", "WF_CTS", "WF_DATA", "WF_ACK", "WF_BOC", "WF_RTS", "IN_TRANSMITTING_DATA", "IN_TRANSMITTING_ACK"]
-    status[status_id]
+    if status_id.nil?
+      return "1"
+    else
+      status = ["IDLE", "WF_NAV", "WF_DIFS", "WF_CTS", "WF_DATA", "WF_ACK", "WF_BOC", "WF_RTS", "IN_TRANSMITTING_DATA", "IN_TRANSMITTING_ACK"]
+      status[status_id]
+    end
   end
 end

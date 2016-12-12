@@ -22,8 +22,10 @@ for i in 1...25000
   terminal_c.routine([access_point, terminal_b, terminal_a, terminal_d], 54)
   terminal_d.routine([access_point, terminal_b, terminal_c, terminal_a], 54)
   access_point.routine([terminal_a, terminal_b, terminal_c, terminal_d], 54)
+
   puts i.to_s + " microsec passed."
   puts "-----------------------------------------------------------------"
+
   terminal_a.refresh_frames_list()
   terminal_b.refresh_frames_list()
   terminal_c.refresh_frames_list()
