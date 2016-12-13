@@ -1,8 +1,7 @@
 class Node
-  attr_accessor :received_frames
 
   # node id
-  NODE_ID = {"AP"=>0, "A"=>1, "B"=>2, "C"=>3, "D"=>4}
+  NODE_ID = {"AP"=>0, "A"=>1, "B"=>2, "C"=>3, "D"=>4, "E"=>5, "F"=>6, "G"=>7, "H"=>8, "I"=>9, "J"=>10, "K"=>11, "L"=>12, "M"=>13, "N"=>14, "O"=>15, "P"=>16}
 
   # status_id
   IDLE = 0
@@ -13,8 +12,8 @@ class Node
   WF_ACK = 5
   WF_BOC = 6
   #WF_RTS = 7
-  IN_TRANSMITTING_DATA = 8
-  IN_TRANSMITTING_ACK = 9
+  X_DATA = 8
+  X_ACK = 9
 
   # waiting time
   T_SIFS = 16
@@ -49,8 +48,6 @@ class Node
   @need_for_refresh = false
 
   def initialize(coordinate, threshold, node_id) # coordinate => 座標, threshold => 閾値
-    super()
-    # とりあえずDIFS待ちということで
     @status = []
     @status.push(IDLE)
     @node_id = node_id
@@ -66,7 +63,7 @@ class Node
 
   def routine(receivers_list, transmitting_speed) # 他端末リスト, レートテーブルにおける任意の送信速度（MAC層による処理と仮定）
     @current_status = @status.pop()
-    initial_status = @current_status
+    @initial_status = @current_status
 =begin
     i_am()
     print @received_frames
@@ -116,8 +113,8 @@ class Node
         @BOCounter -= 1
         if @BOCounter <= 0
           transmit(receivers_list, @frame_for_DATA)
-          @status.push(IN_TRANSMITTING_DATA)
-          # IN_TRANSMITTING_DATA に入る際は @status_counter = T_TRANSMIT + T_SIFS
+          @status.push(X_DATA)
+          # X_DATA に入る際は @status_counter = T_TRANSMIT + T_SIFS
           @status_counter = @frame_for_DATA.get_time(transmitting_speed) + T_SIFS
 =begin
         elsif is_busy(receivers_list) # busy
@@ -150,8 +147,8 @@ class Node
           @status.push(IDLE)
         elsif @BOCounter <= 0 && !isAP()
           transmit(receivers_list, @frame_for_DATA)
-          @status.push(IN_TRANSMITTING_DATA)
-          # IN_TRANSMITTING_DATA に入る際は @status_counter = T_TRANSMIT + T_SIFS
+          @status.push(X_DATA)
+          # X_DATA に入る際は @status_counter = T_TRANSMIT + T_SIFS
           @status_counter = @frame_for_DATA.get_time(transmitting_speed) + T_SIFS
         elsif !isAP()
           @status.push(WF_BOC)
@@ -177,6 +174,7 @@ class Node
               @need_for_refresh = true
             end
           else
+            @need_for_refresh = true
             @status.push(IDLE)
           end
         else
@@ -211,7 +209,7 @@ class Node
       if @status_counter <= 0
         if hasACK_to_me()
           reset_cw()
-          @BOCounter = 0
+          set_boc()
           @status.push(IDLE)
 
           i_am()
@@ -232,22 +230,22 @@ class Node
         @status.push(WF_ACK)
       end
 
-    elsif @current_status == IN_TRANSMITTING_DATA
+    elsif @current_status == X_DATA
       @status_counter -= 1
       if @status_counter <= 0
         @status.push(WF_ACK)
         @status_counter = @frame_example_ACK.get_time(transmitting_speed)
         @need_for_refresh = true
       else
-        @status.push(IN_TRANSMITTING_DATA)
+        @status.push(X_DATA)
       end
 
-    elsif @current_status == IN_TRANSMITTING_ACK
+    elsif @current_status == X_ACK
       @status_counter -= 1
       if @status_counter <= 0
         @status.push(IDLE)
       else
-        @status.push(IN_TRANSMITTING_ACK)
+        @status.push(X_ACK)
       end
 
     elsif @current_status == WF_DATA
@@ -258,17 +256,15 @@ class Node
         i_am()
         puts "started to transmit ACK"
         transmit(receivers_list, @frame_for_ACK)
-        @status.push(IN_TRANSMITTING_ACK)
+        @status.push(X_ACK)
         @status_counter = @frame_for_ACK.get_time(transmitting_speed)
       else
         @status.push(WF_DATA)
       end
 
     end
-    i_am()
+    # i_am()
     # print " " + status_name(initial_status) + " => " + status_name(@current_status) + " => " + status_name(@status[0])
-    print status_name(@status[0])
-    puts
   end
 
   def transmit(receivers_list, frame_to_transmit)
@@ -323,6 +319,7 @@ class Node
       end
     end
     if opponent_coordinate.empty?
+      i_am()
       puts "相手の座標が空です"
     end
 
@@ -412,6 +409,10 @@ class Node
       is_busy = false
     else
       @received_frames.each do |frame|
+=begin
+        i_am()
+        puts frame.sender
+=end
         if rssi(frame.sender, receivers_list)
           is_busy = true
           break
@@ -465,8 +466,13 @@ class Node
     if status_id.nil?
       return "1"
     else
-      status = ["IDLE", "WF_NAV", "WF_DIFS", "WF_CTS", "WF_DATA", "WF_ACK", "WF_BOC", "WF_RTS", "IN_TRANSMITTING_DATA", "IN_TRANSMITTING_ACK"]
+      status = ["IDLE", "WF_NAV", "WF_DIFS", "WF_CTS", "WF_DATA", "WF_ACK", "WF_BOC", "WF_RTS", "X_DATA", "X_ACK"]
       status[status_id]
     end
+  end
+
+  def print_status()
+    print status_name(@initial_status)
+    print " "
   end
 end
